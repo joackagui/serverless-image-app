@@ -6,25 +6,50 @@ service: serverless-image-app
 provider:
   name: aws
   runtime: nodejs20.x
-   region: ${file(config.json):AWS_REGION}
+  region: ${file(config.json):AWS_REGION}
   environment:
     BUCKET_NAME: ${file(config.json):S3_IMAGE_BUCKET}
-    TABLE_NAME: ${file(config.json):DYNAMODB_TABLE_NAMET}
+    TABLE_NAME: ${file(config.json):DYNAMODB_TABLE_NAME}
+  
   iamRoleStatements:
     - Effect: "Allow"
       Action:
         - s3:*
         - rekognition:DetectLabels
       Resource:
+        - arn:aws:s3:::${file(config.json):S3_IMAGE_BUCKET}
         - arn:aws:s3:::${file(config.json):S3_IMAGE_BUCKET}/*
-
+    - Effect: "Allow"
+      Action:
+        - rekognition:DetectLabels
+      Resource: "*"
+    - Effect: "Allow"
+      Action:
+        - dynamodb:PutItem
+      Resource: "*"
+package:
+  exclude:
+    - config.json
+    - package.json
+    - package-lock.json
+    - README.md
+    - .gitignore
+    - .serverless/**
 functions:
-  hello:
-    handler: handler.hello
+  joackGetSignedUrl:
+    handler: src/handler.getSignedUrl
     events:
       - httpApi:
-          path: /
+          path: /signed-url
           method: get
+
+  recognizeImage:
+    handler: src/recognize.processImage
+    events:
+      - s3:
+          bucket: ${self:provider.environment.BUCKET_NAME}
+          event: s3:ObjectCreated:Put
+          existing: true
 
 resources:
   Resources:
@@ -32,6 +57,18 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:provider.environment.BUCKET_NAME}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedMethods:
+                - PUT
+                - POST
+                - GET 
+                - DELETE
+              AllowedOrigins:
+                - "*"
+              AllowedHeaders:
+                - "*"
+              MaxAge: 3000
     ImageTagsTable:
       Type: AWS::DynamoDB::Table
       Properties:
